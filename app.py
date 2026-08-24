@@ -16,15 +16,15 @@ st.write("ワークシートのステップに沿って、説得力のある志�
 
 # NGワードとアドバイスの定義
 NG_WORDS = {
-    "魅力を感じた": "「どの特色に, なぜ惹かれたのか」を具体的に書きましょう。",
-    "教育方針に共感した": "「どの教育方針に, 自分のどのような経験や姿勢が合致しているか」を具体的に書きましょう。",
-    "さまざまなこと": "「さまざまな」という言葉を避け, 具体的に「何を学ぶか」を書きましょう。",
+    "魅力を感じた": "「どの特色に、なぜ惹かれたのか」を具体的に書きましょう。",
+    "教育方針に共感した": "「どの教育方針に、自分のどのような経験や姿勢が合致しているか」を具体的に書きましょう。",
+    "さまざまなこと": "「さまざまな」という言葉を避け、具体的に「何を学ぶか」を書きましょう。",
     "多くのこと": "具体的に「何について学ぶか」を書きましょう。",
-    "人の役に立ちたい": "「誰の, どのような課題に, どう関わりたいか」と言い換えましょう。",
-    "社会に貢献したい": "「どのような課題に関わる形で, どう社会に貢献したいか」を具体的に書きましょう。",
-    "将来に生かしたい": "具体的に「どのような場面で, どう生かすか」を書きましょう。",
-    "視野を広げる": "視野を広げた結果, 「何を成し遂げたいか」を書きましょう。",
-    "深く学びたい": "「深く」ではなく, 具体的に「どのような方法（調査・実験など）で学ぶか」を書きましょう。"
+    "人の役に立ちたい": "「誰の、どのような課題に、どう関わりたいか」と言い換えましょう。",
+    "社会に貢献したい": "「どのような課題に関わる形で、どう社会に貢献したいか」を具体的に書きましょう。",
+    "将来に生かしたい": "具体的に「どのような場面で、どう生かすか」を書きましょう。",
+    "視野を広げる": "視野を広げた結果、「何を成し遂げたいか」を書きましょう。",
+    "深く学びたい": "「深く」ではなく、具体的に「どのような方法（調査・実験など）で学ぶか」を書きましょう。"
 }
 
 # 共通の解析・アドバイス関数
@@ -47,20 +47,20 @@ def analyze_text(text):
 # サイドバー
 st.sidebar.header("💡 アプリの使い方")
 st.sidebar.write("""
-このアプリは, 配布されたワークシートのステップをシステム化したものです。
+このアプリは、配布されたワークシートのステップをシステム化したものです。
 左側のメニューでステップを進めながら入力してください。
-入力した文章はリアルタイムでチェックされ, 改善のアドバイスが表示されます。
+入力した文章はリアルタイムでチェックされ、改善のアドバイスが表示されます。
 """)
 
 # AI設定 (サイドバー)
 st.sidebar.markdown("---")
 st.sidebar.subheader("🔑 AI設定 (壁打ち機能用)")
-st.sidebar.write("「AIと相談しながら決める」機能を利用するには, GeminiのAPIキーが必要です。")
+st.sidebar.write("「AIと相談しながら決める」機能を利用するには、GeminiのAPIキーが必要です。")
 api_key_input = st.sidebar.text_input("Gemini API Key", type="password", help="Google AI Studio等で取得したAPIキーを入力してください。")
 if api_key_input:
     st.session_state.gemini_api_key = api_key_input
 
-st.sidebar.caption("💡 先生へ: Streamlit Cloudの Secrets に `GEMINI_API_KEY` を登録しておくと, 生徒がキーを入力しなくても最初からAI機能を使えるようになります。")
+st.sidebar.caption("💡 先生へ: Streamlit Cloudの Secrets に `GEMINI_API_KEY` を登録しておくと、生徒がキーを入力しなくても最初からAI機能を使えるようになります。")
 
 # タブでステップを管理
 tab1, tab2, tab3 = st.tabs(["ステップ1: 中心文の決定", "ステップ2: 5段落の本文作成", "ステップ3: 完成原稿チェック"])
@@ -77,29 +77,15 @@ if "target" not in st.session_state:
 
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "assistant", "content": "こんにちは！志望理由書の「核」となる一文を一緒に決めていきましょう。まずは, 今あなたが一番興味を持っている学問分野や, 気になっている社会の出来事（ニュース, 身近な課題など）について教えてください！"}
+        {"role": "assistant", "content": "こんにちは！志望理由書の「核」となる一文を一緒に決めていきましょう。まずは、今あなたが一番興味を持っている学問分野や、気になっている社会の出来事（ニュース、身近な課題など）について教えてください！"}
     ]
 
 for i in range(1, 6):
     if f"p{i}" not in st.session_state:
         st.session_state[f"p{i}"] = ""
 
-# APIキーの取得と事前検証
-raw_api_key = st.session_state.get("gemini_api_key") or st.secrets.get("GEMINI_API_KEY") if ("GEMINI_API_KEY" in st.secrets or "gemini_api_key" in st.session_state) else None
-
-api_key = None
-api_key_error = None
-
-if raw_api_key:
-    # 前後の空白や引用符をクリーンアップ
-    cleaned_key = str(raw_api_key).strip().strip('"').strip("'")
-    
-    if "あなたの" in cleaned_key or "YOUR" in cleaned_key or "your" in cleaned_key:
-        api_key_error = "⚠️ **APIキーエラー**: マニュアルのサンプル表記（`あなたのAPIキー`）のままになっています。Google AI Studioで取得した実際のAPIキー（`AIzaSy`で始まる長い文字列）に置き換えて設定してください。"
-    elif not cleaned_key.startswith("AIzaSy"):
-        api_key_error = f"⚠️ **APIキーエラー**: 入力されたキーの形式が正しくありません。Gemini APIキーは通常 `AIzaSy` で始まります。コピー漏れがないか確認してください。(検出された文字の先頭: `{cleaned_key[:6] if cleaned_key else 'なし'}`)"
-    else:
-        api_key = cleaned_key
+# APIキーの取得
+api_key = st.session_state.get("gemini_api_key") or st.secrets.get("GEMINI_API_KEY")
 
 # AI壁打ち用のシステムプロンプト
 system_instruction = """あなたは高校生の志望理由書作成を支援する、優しく丁寧な進路指導アドバイザーです。
@@ -156,11 +142,8 @@ with tab1:
         st.write("AIの質問に答えていくことで、あなたの志望理由の核を引き出します。")
         
         # APIキーチェック
-        if not raw_api_key:
-            st.warning("⚠️ **APIキーが未設定です**: AIチャット機能を利用するには、左側サイドバーでAPIキーを入力するか、Streamlit CloudのSecretsに `GEMINI_API_KEY` を登録してください。")
-        elif api_key_error:
-            st.error(api_key_error)
-            st.info("💡 **解決方法**: 記述を再度確認し、StreamlitのSecretsに正しくキーが保存されているか、またはサイドバーの入力欄にコピペした文字に不備がないか確認してください。")
+        if not api_key:
+            st.warning("⚠️ AIチャット機能を利用するには、サイドバーでGemini APIキーを入力するか、Streamlit CloudのSecretsに 'GEMINI_API_KEY' を登録してください。")
         
         # チャットコンテナ
         chat_container = st.container()
@@ -172,7 +155,7 @@ with tab1:
                     st.write(msg["content"])
                     
         # ユーザー入力
-        if user_input := st.chat_input("メッセージを入力してください...", disabled=(api_key is None)):
+        if user_input := st.chat_input("メッセージを入力してください..."):
             # ユーザーメッセージを即座に表示・保存
             st.session_state.messages.append({"role": "user", "content": user_input})
             with chat_container:
@@ -214,25 +197,18 @@ with tab1:
                                     st.success("🎉 AIとの会話から「中心文」の4つの要素が自動決定されました！画面を下にスクロールして確認するか、次の「ステップ2」に進んでください。")
                                     st.rerun()
                             except Exception as e:
-                                error_str = str(e)
-                                diagnostic_advice = ""
-                                if "API_KEY_INVALID" in error_str or "API key not valid" in error_str:
-                                    diagnostic_advice = "\n\n💡 **診断結果**: 入力されたAPIキーが無効、またはスペルミスがあります。Google AI Studioで新しいキーを再取得するか、コピーした文字列（`AIzaSy...`）が最初から最後まで正しく貼り付けられているか確認してください。"
-                                elif "Quota exceeded" in error_str or "429" in error_str:
-                                    diagnostic_advice = "\n\n💡 **診断結果**: 無料枠のリクエスト回数上限に達した可能性があります。数分間待ってから再度送信してください。"
-                                elif "location is not supported" in error_str or "not available in your country" in error_str:
-                                    diagnostic_advice = "\n\n💡 **診断結果**: 現在、Streamlit Cloudのサーバーが稼働している地域（AWS/GCPの地域）が、Google Gemini APIのサポート対象外になっている可能性があります。"
-                                
-                                error_msg = f"❌ **AIの呼び出し中にエラーが発生しました。**\n\nエラー詳細: `{error_str}`{diagnostic_advice}"
-                                message_placeholder.error(error_msg)
+                                error_msg = f"AIの呼び出し中にエラーが発生しました。APIキーを確認してください。詳細: {e}"
+                                message_placeholder.write(error_msg)
                                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
             else:
-                st.info("🔑 有効なAPIキーを設定すると、AIとのチャットが開始できます。")
+                with chat_container:
+                    with st.chat_message("assistant"):
+                        st.write("🔑 APIキーが設定されていません。サイドバーから設定してください。")
         
         # チャットリセットボタン
-        if st.button("💬 チャットを最初からやり早す"):
+        if st.button("💬 チャットを最初からやり直す"):
             st.session_state.messages = [
-                {"role": "assistant", "content": "こんにちは！志望理由書の「核」となる一文を一緒に決めていきましょう。まずは、今あなたが一番興味を持っている学問分野や, 気になっている社会の出来事（ニュース、身近な課題など）について教えてください！"}
+                {"role": "assistant", "content": "こんにちは！志望理由書の「核」となる一文を一緒に決めていきましょう。まずは、今あなたが一番興味を持っている学問分野や、気になっている社会の出来事（ニュース、身近な課題など）について教えてください！"}
             ]
             st.session_state.theme = ""
             st.session_state.method = ""
@@ -280,8 +256,7 @@ with tab1:
         if found_bad:
             st.warning(f"⚠️ **避けるべき表現が含まれています**: {', '.join(found_bad)} だけで終わる文は避けましょう。何を・どの視点で・誰に対して・どう生かすかを具体的に書き込んでください。")
 
-# --- タブ2: 本文の下書き (5段落) ---
-with tab2:
+# --- タブ2: 本文の下書き (5段落) ---\nwith tab2:
     st.header("2. 本文の下書き (5段落)")
     st.write("ワークシートの構成に沿って、各段落を執筆します。右側にアドバイスが表示されます。")
     
@@ -309,7 +284,7 @@ with tab2:
             "num": 4,
             "role": "入学後の学び方／将来像",
             "guide": "入学後は【取り組み】に挑戦し、【力】を身につけたい。そして、将来は【立場】として【どのように働くか】できる人間になりたい。",
-            "condition": "「頑張る」を具体的な行動にし、職業名だけでなくどんな姿勢や力を持つ人になりたいかを書きます。"
+            "condition": "「頑張る」を具体的な行動にし、職業名だけでなくどんな姿勢や力を持つ人なりたいかを書きます。"
         },
         {
             "num": 5,
