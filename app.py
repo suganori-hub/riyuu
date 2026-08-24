@@ -66,22 +66,22 @@ st.sidebar.caption("💡 先生へ: Streamlit Cloudの Secrets に `GEMINI_API_K
 st.sidebar.markdown("---")
 st.sidebar.subheader("🤖 AIモデルの設定")
 model_options = [
-    "gemini-1.5-flash",
+    "gemini-3.6-flash",
     "gemini-2.0-flash",
-    "gemini-2.5-flash",
+    "gemini-1.5-flash",
+    "gemini-3.6-pro",
     "gemini-1.5-pro",
-    "gemini-2.5-pro",
 ]
 selected_model = st.sidebar.selectbox(
     "使用するAIモデルを選択してください:",
     options=model_options,
     index=0,
-    help="お使いのAPIキーのプランや時期によって、利用可能なモデルが異なります。404エラーが出る場合は、別のモデル（gemini-2.0-flash や gemini-2.5-flash など）に切り替えてみてください。"
+    help="お使いのAPIキーのプランや時期によって、利用可能なモデルが異なります。404エラーが出る場合は、別のモデル（gemini-3.6-flash や gemini-2.0-flash など）に切り替えてみてください。"
 )
 
 custom_model_enabled = st.sidebar.checkbox("別のモデル名を直接入力する")
 if custom_model_enabled:
-    selected_model = st.sidebar.text_input("モデル名を入力（例: gemini-2.0-flash-exp）", value="gemini-1.5-flash")
+    selected_model = st.sidebar.text_input("モデル名を入力（例: gemini-3.6-flash）", value="gemini-3.6-flash")
 
 api_key = st.session_state.get("gemini_api_key") or st.secrets.get("GEMINI_API_KEY")
 
