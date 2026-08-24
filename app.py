@@ -1,5 +1,6 @@
 import streamlit as st
 import re
+import google.generativeai as genai
 
 # ページ設定
 st.set_page_config(
@@ -51,6 +52,16 @@ st.sidebar.write("""
 入力した文章はリアルタイムでチェックされ、改善のアドバイスが表示されます。
 """)
 
+# AI設定 (サイドバー)
+st.sidebar.markdown("---")
+st.sidebar.subheader("🔑 AI設定 (壁打ち機能用)")
+st.sidebar.write("「AIと相談しながら決める」機能を利用するには、GeminiのAPIキーが必要です。")
+api_key_input = st.sidebar.text_input("Gemini API Key", type="password", help="Google AI Studio等で取得したAPIキーを入力してください。")
+if api_key_input:
+    st.session_state.gemini_api_key = api_key_input
+
+st.sidebar.caption("💡 先生へ: Streamlit Cloudの Secrets に `GEMINI_API_KEY` を登録しておくと、生徒がキーを入力しなくても最初からAI機能を使えるようになります。")
+
 # タブでステップを管理
 tab1, tab2, tab3 = st.tabs(["ステップ1: 中心文の決定", "ステップ2: 5段落の本文作成", "ステップ3: 完成原稿チェック"])
 
@@ -64,27 +75,180 @@ if "position" not in st.session_state:
 if "target" not in st.session_state:
     st.session_state.target = ""
 
-if f"p1" not in st.session_state:
-    for i in range(1, 6):
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {"role": "assistant", "content": "こんにちは！志望理由書の「核」となる一文を一緒に決めていきましょう。まずは、今あなたが一番興味を持っている学問分野や、気になっている社会の出来事（ニュース、身近な課題など）について教えてください！"}
+    ]
+
+for i in range(1, 6):
+    if f"p{i}" not in st.session_state:
         st.session_state[f"p{i}"] = ""
+
+# APIキーの取得
+api_key = st.session_state.get("gemini_api_key") or st.secrets.get("GEMINI_API_KEY")
+
+# AI壁打ち用のシステムプロンプト
+system_instruction = """あなたは高校生の志望理由書作成を支援する、優しく丁寧な進路指導アドバイザーです。
+生徒の「志望理由の核（中心文）」を一緒に作るため、対話を通じて以下の4つの要素を引き出してください。
+
+1. 【テーマ】（例: 地域コミュニティの衰退問題、スマートフォンの依存症、再生可能エネルギーの普及など、具体的に探究・研究したい内容）
+2. 【視点・方法】（例: 自治体と市民の協働という視点、心理学的な実験、データ分析、アンケート調査など、どうやってそれを研究するか）
+3. 【立場】（例: 地域コーディネーター、開発エンジニア、スクールカウンセラーなど、将来どんな役割で活躍したいか）
+4. 【対象・課題】（例: 高齢化が進む限界集落、不登校に悩む子どもたちなど、誰のどんな課題に貢献したいか）
+
+対話のルール：
+- 一度にすべての要素を聞かないでください。生徒が答えやすいよう、まずは「今、一番関心があること」や「将来やりたいこと」などを聞き、1問ずつ対話を進めてください。
+- 生徒の回答が曖昧（例：「経済について学びたい」「人の役に立ちたい」など）な場合、ワークシートの注意書き「避ける形」を意識してください。
+  「魅力を感じた」「人の役に立ちたい」「多くのことを学びたい」だけで終わらせないよう、「具体的にどんな現象に興味がありますか？」「どんな人のどんな課題に？」と、優しく具体化を促してください。
+- 4つの要素がある程度引き出せたと判断したら、ワークシートのテンプレートの形：
+  「私は【テーマ】について、【視点・方法】から研究し、将来【立場】として、【対象・課題】に貢献したい。」
+  に当てはめた「中心文」を生徒に提案してください。
+- 生徒がその提案に「これでいいです」「これで決定します」と納得したら、必ず、会話の最後に**全く同じ次の形式**で、4つの要素を出力してください。これによりアプリのシステム側が値を自動的に抽出してフォームに入力します。結果以外の余計な文章はタグの後ろに付けないでください。
+
+[RESULT]
+THEME: {抽出したテーマ}
+METHOD: {抽出した視点・方法}
+POSITION: {抽出した立場}
+TARGET: {抽出した対象・課題}
+[/RESULT]
+"""
+
+# Gemini 履歴変換用関数
+def get_gemini_history():
+    history = []
+    for msg in st.session_state.messages[1:]:
+        role = "user" if msg["role"] == "user" else "model"
+        history.append({
+            "role": role,
+            "parts": [msg["content"]]
+        })
+    return history
 
 # --- タブ1: 中心文の決定 ---
 with tab1:
     st.header("1. 最初に、志望理由の核を一文で決める")
     st.write("「私は何を、どう研究し、将来どう生かしたいのか」を明確にします。")
     
+    # モード選択
+    mode = st.radio(
+        "中心文の決め方を選んでください:",
+        ["自分で直接入力する", "AIと相談しながら決める（壁打ちチャット）"],
+        horizontal=True,
+        key="generation_mode"
+    )
+    
+    if mode == "AIと相談しながら決める（壁打ちチャット）":
+        st.subheader("💬 AI壁打ちチャット")
+        st.write("AIの質問に答えていくことで、あなたの志望理由の核を引き出します。")
+        
+        # APIキーチェック
+        if not api_key:
+            st.warning("⚠️ AIチャット機能を利用するには、サイドバーでGemini APIキーを入力するか、Streamlit CloudのSecretsに 'GEMINI_API_KEY' を登録してください。")
+        
+        # チャットコンテナ
+        chat_container = st.container()
+        
+        # チャット履歴の表示
+        with chat_container:
+            for msg in st.session_state.messages:
+                with st.chat_message(msg["role"]):
+                    st.write(msg["content"])
+                    
+        # ユーザー入力
+        if user_input := st.chat_input("メッセージを入力してください..."):
+            # ユーザーメッセージを即座に表示・保存
+            st.session_state.messages.append({"role": "user", "content": user_input})
+            with chat_container:
+                with st.chat_message("user"):
+                    st.write(user_input)
+            
+            # AIの回答生成
+            if api_key:
+                with chat_container:
+                    with st.chat_message("assistant"):
+                        message_placeholder = st.empty()
+                        with st.spinner("AIが考えています..."):
+                            try:
+                                genai.configure(api_key=api_key)
+                                model = genai.GenerativeModel(
+                                    model_name="gemini-1.5-flash",
+                                    system_instruction=system_instruction
+                                )
+                                chat = model.start_chat(history=get_gemini_history())
+                                response = chat.send_message(user_input)
+                                ai_response = response.text
+                                message_placeholder.write(ai_response)
+                                st.session_state.messages.append({"role": "assistant", "content": ai_response})
+                                
+                                # 結果のパース
+                                result_match = re.search(r"\[RESULT\](.*?)\[/RESULT\]", ai_response, re.DOTALL)
+                                if result_match:
+                                    result_content = result_match.group(1)
+                                    theme_m = re.search(r"THEME:\s*(.*)", result_content)
+                                    method_m = re.search(r"METHOD:\s*(.*)", result_content)
+                                    position_m = re.search(r"POSITION:\s*(.*)", result_content)
+                                    target_m = re.search(r"TARGET:\s*(.*)", result_content)
+                                    
+                                    if theme_m: st.session_state.theme = theme_m.group(1).strip()
+                                    if method_m: st.session_state.method = method_m.group(1).strip()
+                                    if position_m: st.session_state.position = position_m.group(1).strip()
+                                    if target_m: st.session_state.target = target_m.group(1).strip()
+                                    
+                                    st.success("🎉 AIとの会話から「中心文」の4つの要素が自動決定されました！画面を下にスクロールして確認するか、次の「ステップ2」に進んでください。")
+                                    st.rerun()
+                            except Exception as e:
+                                error_msg = f"AIの呼び出し中にエラーが発生しました。APIキーを確認してください。詳細: {e}"
+                                message_placeholder.write(error_msg)
+                                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+            else:
+                with chat_container:
+                    with st.chat_message("assistant"):
+                        st.write("🔑 APIキーが設定されていません。サイドバーから設定してください。")
+        
+        # チャットリセットボタン
+        if st.button("💬 チャットを最初からやり直す"):
+            st.session_state.messages = [
+                {"role": "assistant", "content": "こんにちは！志望理由書の「核」となる一文を一緒に決めていきましょう。まずは、今あなたが一番興味を持っている学問分野や、気になっている社会の出来事（ニュース、身近な課題など）について教えてください！"}
+            ]
+            st.session_state.theme = ""
+            st.session_state.method = ""
+            st.session_state.position = ""
+            st.session_state.target = ""
+            st.rerun()
+
+    # 共通のプレビューおよび手動調整エリア
+    st.write("---")
+    st.subheader("📝 「中心文」の要素調整")
+    st.write("AIとの相談結果がここに入力されます。必要に応じて自分で書き換えて調整することも可能です。")
+    
     col1, col2 = st.columns(2)
     with col1:
-        st.session_state.theme = st.text_input("① 【テーマ】（例: 地域コミュニティの衰退問題）", value=st.session_state.theme)
-        st.session_state.method = st.text_input("② 【視点・方法】（例: 自治体と市民の協働という視点）", value=st.session_state.method)
+        st.session_state.theme = st.text_input(
+            "① 【テーマ】（例: 地域コミュニティの衰退問題）", 
+            value=st.session_state.theme,
+            key="theme_input"
+        )
+        st.session_state.method = st.text_input(
+            "② 【視点・方法】（例: 自治体と市民の協働という視点）", 
+            value=st.session_state.method,
+            key="method_input"
+        )
     with col2:
-        st.session_state.position = st.text_input("③ 【立場】（例: 地域コーディネーター）", value=st.session_state.position)
-        st.session_state.target = st.text_input("④ 【対象・課題】（例: 高齢化が進む限界集落の維持活性化）", value=st.session_state.target)
-        
-    # 中心文の結合
+        st.session_state.position = st.text_input(
+            "③ 【立場】（例: 地域コーディネーター）", 
+            value=st.session_state.position,
+            key="position_input"
+        )
+        st.session_state.target = st.text_input(
+            "④ 【対象・課題】（例: 高齢化が進む限界集落の維持活性化）", 
+            value=st.session_state.target,
+            key="target_input"
+        )
+
+    # 中心文の結合とプレビュー
     if st.session_state.theme or st.session_state.method or st.session_state.position or st.session_state.target:
         center_sentence = f"私は**{st.session_state.theme or '（テーマ）'}**について、**{st.session_state.method or '（視点・方法）'}**から研究し、将来**{st.session_state.position or '（立場）'}**として、**{st.session_state.target or '（対象・課題）'}**に貢献したい。"
-        st.info(f"**生成された中心文:**\n\n{center_sentence}")
+        st.info(f"**【生成された中心文】**\n\n{center_sentence}")
         
         # 避けるべき形チェック
         bad_patterns = ["魅力を感じた", "人の役に立ちたい", "多くのことを学びたい"]
@@ -92,8 +256,7 @@ with tab1:
         if found_bad:
             st.warning(f"⚠️ **避けるべき表現が含まれています**: {', '.join(found_bad)} だけで終わる文は避けましょう。何を・どの視点で・誰に対して・どう生かすかを具体的に書き込んでください。")
 
-# --- タブ2: 本文の下書き (5段落) ---
-with tab2:
+# --- タブ2: 本文の下書き (5段落) ---\nwith tab2:
     st.header("2. 本文の下書き (5段落)")
     st.write("ワークシートの構成に沿って、各段落を執筆します。右側にアドバイスが表示されます。")
     
@@ -121,7 +284,7 @@ with tab2:
             "num": 4,
             "role": "入学後の学び方／将来像",
             "guide": "入学後は【取り組み】に挑戦し、【力】を身につけたい。そして、将来は【立場】として【どのように働くか】できる人間になりたい。",
-            "condition": "「頑張る」を具体的な行動にし、職業名だけでなくどんな姿勢や力を持つ人になりたいかを書きます。"
+            "condition": "「頑張る」を具体的な行動にし、職業名だけでなくどんな姿勢や力を持つ人なりたいかを書きます。"
         },
         {
             "num": 5,
