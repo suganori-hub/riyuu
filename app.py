@@ -209,13 +209,13 @@ with tab1:
                                 st.session_state.messages.append({"role": "assistant", "content": ai_response})
                                 
                                 # 結果の自動抽出
-                                result_match = re.search(r"\\[RESULT\\](.*?)\\[/RESULT\\]", ai_response, re.DOTALL)
+                                result_match = re.search(r"\[RESULT\](.*?)\[/RESULT\]", ai_response, re.DOTALL)
                                 if result_match:
                                     result_content = result_match.group(1)
                                     theme_m = re.search(r"THEME:\s*(.*)", result_content)
                                     method_m = re.search(r"METHOD:\s*(.*)", result_content)
                                     position_m = re.search(r"POSITION:\s*(.*)", result_content)
-                                    target_m = re.search(r"TARGET:\\s*(.*)", result_content)
+                                    target_m = re.search(r"TARGET:\s*(.*)", result_content)
                                     
                                     if theme_m: st.session_state.theme = theme_m.group(1).strip()
                                     if method_m: st.session_state.method = method_m.group(1).strip()
