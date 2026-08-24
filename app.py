@@ -110,10 +110,41 @@ if "step2_compiled" not in st.session_state:
 if "step3_input" not in st.session_state:
     st.session_state.step3_input = ""
 
+if "step2_messages" not in st.session_state:
+    st.session_state.step2_messages = [
+        {"role": "assistant", "content": "ステップ①で決めた「中心文」をもとに、5つの段落（きっかけ、研究内容、大学の理由、将来像、社会貢献）を1つずつ一緒に作っていきましょう！\\n\\nまずは、上部の「ガイドライン貼り付け欄」にステップ①で決めた中心文をペーストしてください。貼り付けたら、どの段落から相談したいか教えてくださいね！"}
+    ]
+
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": "こんにちは！国公立大学の推薦合格を目指して、志望理由書の「核（中心文）」を一緒に固めていきましょう！\n\nまずは、あなたが今高校での探究活動や日常生活の中で、もっとも「疑問に思っていること」や「解決したい地域・社会の課題」について、短くても良いので教えてください！"}
     ]
+
+# AIステップ2用のシステムプロンプト (段落肉付け壁打ち)
+system_instruction_step2 = """あなたは国公立大学の学校推薦型選抜・総合型選抜を志望する高校生の指導を行う、極めて優秀で熱意ある進路指導アドバイザーです。
+ステップ1で決定した「中心文」をもとに、志望理由書の「5つの段落」を生徒と一緒に1つずつ肉付け（作成）していきます。
+
+【ステップ1の中心文（ガイドライン）】:
+{pasted_center}
+
+【対話の基本方針】：
+- 一度に複数の段落を進めず、必ず「まずは第1段落から作っていきましょう」「次は第2段落ですね」と、1つの段落に集中して生徒と対話してください。
+- 生徒がその段落に関する高校での出来事や、将来への想いなどを入力したら、以下の【各段落の役割と強くする条件】を満たすように、足りない具体性を優しく問いかけて引き出してください。
+- 各段落の文章案がまとまったら、生徒に「〜という文章はいかがですか？」と提案してください。
+- 生徒がその提案に「これで決定します」「これでいいです」「これで保存してください」と同意したら、必ず、会話の最後に以下の形式で決定した段落の番号と文章を出力してください。結果以外の余計な文章はタグの後ろに絶対に付けないでください。
+
+[RESULT_P]
+NUM: {{段落番号。1から5の半角数字}}
+CONTENT: {{決定した段落の文章}}
+[/RESULT_P]
+
+【各段落の役割と強くする条件】：
+1. 第1段落（きっかけ・問題意識）：興味を持ったきっかけや高校での具体的な体験、授業、探究活動などの場面をしっかり書かせる。単に「興味がある」という主観的な報告で終わらせない。
+2. 第2段落（研究したい問い）：受動的な学び（勉強したい）ではなく、自ら「明らかにしたい具体的な問い（研究テーマ）」を問いかけ、調査・実験・データ分析などの研究手法の方向性を考えさせる。
+3. 第3段落（大学理由）：他大学ではなく「なぜその国公立大学なのか」を説明させる。大学固有の授業名、ゼミ、研究室、地域プログラムなどの固有名詞を必ず1つ以上入れさせ、研究テーマと深く結びつけさせる。
+4. 第4段落（学び方・将来像）：「大学生活を頑張りたい」といった抽象表現は避け、具体的な行動計画（実習、資格、留学など）を書かせる。また、職業名だけでなく「どのような姿勢や力を持つ人間になりたいか」を明確にする。
+5. 第5段落（社会貢献）：「人の役に立つ」という曖昧な表現を完全に排除し、「誰の」「どのような課題に」「どう関わるか」を言葉にして、社会における役割を示させる。
+"""
 
 # AI壁打ち用のシステムプロンプト (国公立推薦特化)
 system_instruction_step1 = """あなたは国公立大学の学校推薦型選抜・総合型選抜を志望する高校生の指導を行う、極めて優秀で熱意ある進路指導アドバイザーです。
@@ -261,73 +292,153 @@ with tab1:
         
         st.markdown("---")
         st.write("👉 **これをコピーして【ステップ②】の「中心文ペースト欄」に貼り付けましょう！**")
-        st.text_area("完成した中心文 (一文)", value=st.session_state.step1_sentence, height=80, key="step1_sentence_area")
+        step1_sentence_input = st.text_area("完成した中心文 (一文)", value=st.session_state.step1_sentence, height=80)
+        st.session_state.step1_sentence = step1_sentence_input
 
 # ==========================================
 # --- タブ2: ステップ②：5つの段落への肉付け ---
 # ==========================================
 with tab2:
     st.header("✍️ ステップ②：5つの段落に肉付けする")
-    st.write("ステップ①で決めた「軸（中心文）」を見つめながら、文章全体の構成を具体的に肉付けしていきます。")
+    st.write("ステップ①で決めた「軸（中心文）」を見つめながら、文章全体の構成をAIと壁打ち相談しながら、または手動で肉付けしていきます。")
     
     # コピペエリア
     st.subheader("🎯 ガイドライン（ステップ①からコピペ）")
     pasted_center = st.text_area(
-        "ステップ①で決定した「中心文」をここに貼り付けてください（常に意識しながら書き進めるため）",
+        "ステップ①で決定した「中心文」をここに貼り付けてください（AI壁打ちチャットと連動します）",
         placeholder="例: 私は地域コミュニティの衰退問題について、自治体と市民の協働という視点から研究し、将来地域コーディネーターとして、高齢化が進む限界集落の維持活性化に貢献したい。",
-        height=70
+        height=70,
+        value=st.session_state.step1_sentence  # 自動反映
     )
     
     st.markdown("---")
-    st.subheader("🧱 5段落構成の下書き作成")
     
-    # 5つの段落設定
-    paragraphs_info = [
-        {
-            "key": "step2_p1",
-            "role": "第1段落：きっかけ・問題意識",
-            "guide": "【テンプレート】私が【分野】に関心を持ったのは、【経験】がきっかけである。そこから【課題】に疑問を持った。",
-            "condition": "💡 **国公立推薦を強くする条件**:\n\n高校での具体的な体験、授業、探究活動などの場面をしっかり書きましょう。単に「興味がある」という主観的な報告で終わらせないことが極めて重要です。"
-        },
-        {
-            "key": "step2_p2",
-            "role": "第2段落：研究したい問い",
-            "guide": "【テンプレート】大学では【テーマ】について、【方法・視点】から明らかにしたい。特に【具体的な問い】に関心がある。",
-            "condition": "💡 **国公立推薦を強くする条件**:\n\n単なる「受動的な勉強（学びたい）」ではなく、自ら「明らかにしたい問い（研究テーマ）」を問いかけ、調査・実験・データ分析などの方向性を示しましょう。"
-        },
-        {
-            "key": "step2_p3",
-            "role": "第3段落：その大学である理由（最重要）",
-            "guide": "【テンプレート】貴学の【授業・ゼミ等】では、【できる学び】に取り組める。これは、私の【関心】を深めるうえで必要である。",
-            "condition": "💡 **国公立推薦を強くする条件**:\n\n他大学の同種学部ではなく「なぜその国公立大学なのか」を説明します。大学固有の授業名、ゼミ、研究室、地域プログラムなどの**固有名詞を必ず1つ以上**入れ、研究テーマと結びつけましょう。"
-        },
-        {
-            "key": "step2_p4",
-            "role": "第4段落：入学後の学び方／将来像",
-            "guide": "【テンプレート】入学後は【取り組み】に挑戦し、【力】を身につけたい。そして、将来は【立場】として【どのように働くか】できる人間になりたい。",
-            "condition": "💡 **国公立推薦を強くする条件**:\n\n「大学生活を頑張りたい」といった抽象表現は避け、具体的な行動計画（実習、資格、留学など）を記述します。また、職業名だけでなく「どのような姿勢や力を持つ人間になりたいか」を明確にします。"
-        },
-        {
-            "key": "step2_p5",
-            "role": "第5段落：社会貢献",
-            "guide": "【テンプレート】将来は【身につけた力】を活かして、【対象・課題】に関わる形で社会に貢献したい。",
-            "condition": "💡 **国公立推薦を強くする条件**:\n\n「人の役に立つ」という曖昧な表現を完全に排除します。「誰の」「どのような課題に」「どう関わるか」を言葉にして、社会における自分の役割を示します。"
-        }
-    ]
+    col_step2_chat, col_step2_inputs = st.columns([3, 2])
     
-    # 5段落の入力フォーム
-    p_texts = []
-    for p in paragraphs_info:
-        st.subheader(p["role"])
-        col_inp, col_cnd = st.columns([3, 2])
+    with col_step2_chat:
+        st.subheader("💬 段落作成 AI壁打ちチャット")
+        st.write("各段落について、AIと相談しながら文章を練り上げていくことができます。")
         
-        with col_inp:
+        if not api_key:
+            st.warning("⚠️ AIチャット機能を利用するには、サイドバーでGemini APIキーを入力するか、Streamlit CloudのSecretsに 'GEMINI_API_KEY' を登録してください。")
+            
+        # チャットコンテナ
+        chat_container_step2 = st.container(height=500)
+        
+        with chat_container_step2:
+            for msg in st.session_state.step2_messages:
+                with st.chat_message(msg["role"]):
+                    st.write(msg["content"])
+                    
+        # ユーザー入力
+        if user_input_step2 := st.chat_input("ステップ2の相談内容を入力する...", key="step2_chat_input"):
+            st.session_state.step2_messages.append({"role": "user", "content": user_input_step2})
+            with chat_container_step2:
+                with st.chat_message("user"):
+                    st.write(user_input_step2)
+                    
+            if api_key:
+                with chat_container_step2:
+                    with st.chat_message("assistant"):
+                        message_placeholder = st.empty()
+                        with st.spinner("AIが段落のアイデアを整理中..."):
+                            try:
+                                genai.configure(api_key=api_key)
+                                
+                                # システムプロンプトに貼り付けられた中心文を埋め込む
+                                system_instruction_step2_dynamic = system_instruction_step2.format(pasted_center=pasted_center or "（未設定：ステップ1の中心文を入れてください）")
+                                
+                                # 履歴変換
+                                step2_history = []
+                                for msg in st.session_state.step2_messages[1:]:
+                                    role = "user" if msg["role"] == "user" else "model"
+                                    step2_history.append({"role": role, "parts": [msg["content"]]})
+                                    
+                                model = genai.GenerativeModel(
+                                    model_name=selected_model,
+                                    system_instruction=system_instruction_step2_dynamic
+                                )
+                                chat = model.start_chat(history=step2_history)
+                                response = chat.send_message(user_input_step2)
+                                ai_response_step2 = response.text
+                                message_placeholder.write(ai_response_step2)
+                                st.session_state.step2_messages.append({"role": "assistant", "content": ai_response_step2})
+                                
+                                # 段落結果の自動抽出 [RESULT_P]
+                                result_match_p = re.search(r"\[RESULT_P\](.*?)\[/RESULT_P\]", ai_response_step2, re.DOTALL)
+                                if result_match_p:
+                                    result_content_p = result_match_p.group(1)
+                                    num_m = re.search(r"NUM:\s*([1-5])", result_content_p)
+                                    content_m = re.search(r"CONTENT:\s*(.*)", result_content_p, re.DOTALL)
+                                    
+                                    if num_m and content_m:
+                                        p_num = num_m.group(1).strip()
+                                        p_content = content_m.group(1).strip()
+                                        st.session_state[f"step2_p{p_num}"] = p_content
+                                        st.success(f"🎉 第 {p_num} 段落の文章が自動反映されました！右側の入力エリアで確認してください。")
+                                        st.rerun()
+                            except Exception as e:
+                                error_msg = f"AIの呼び出し中にエラーが発生しました。詳細: {e}"
+                                message_placeholder.write(error_msg)
+                                st.session_state.step2_messages.append({"role": "assistant", "content": error_msg})
+                                
+        if st.button("💬 ステップ2のチャットをリセットする", key="reset_step2_chat"):
+            st.session_state.step2_messages = [
+                {"role": "assistant", "content": "ステップ①で決めた「中心文」をもとに、5つの段落（きっかけ、研究内容、大学の理由、将来像、社会貢献）を1つずつ一緒に作っていきましょう！\\n\\nまずは、上部の「ガイドライン貼り付け欄」にステップ①で決めた中心文をペーストしてください。貼り付けたら、どの段落から相談したいか教えてくださいね！"}
+            ]
+            for i in range(1, 6):
+                st.session_state[f"step2_p{i}"] = ""
+            st.session_state.step2_compiled = ""
+            st.rerun()
+
+    with col_step2_inputs:
+        st.subheader("🧱 5段落構成の下書き作成")
+        st.write("AIとの相談結果が自動反映されます。直接自分で修正も可能です。")
+        
+        # 5つの段落設定
+        paragraphs_info = [
+            {
+                "key": "step2_p1",
+                "role": "第1段落：きっかけ・問題意識",
+                "guide": "【テンプレート】私が【分野】に関心を持ったのは、【経験】がきっかけである。そこから【課題】に疑問を持った。",
+                "condition": "💡 **国公立推薦を強くする条件**:\\n\\n高校での具体的な体験、授業、探究活動などの場面をしっかり書きましょう。単に「興味がある」という主観的な報告で終わらせないことが極めて重要です。"
+            },
+            {
+                "key": "step2_p2",
+                "role": "第2段落：研究したい問い",
+                "guide": "【テンプレート】大学では【テーマ】について、【方法・視点】から明らかにしたい。特に【具体的な問い】に関心がある。",
+                "condition": "💡 **国公立推薦を強くする条件**:\\n\\n単なる「受動的な学び（学びたい）」ではなく、自ら「明らかにしたい問い（研究テーマ）」を問いかけ、調査・実験・データ分析などの研究手法の方向性を考えさせる。"
+            },
+            {
+                "key": "step2_p3",
+                "role": "第3段落：その大学である理由（最重要）",
+                "guide": "【テンプレート】貴学の【授業・ゼミ等】では、【できる学び】に取り組める。これは、私の【関心】を深めるうえで必要である。",
+                "condition": "💡 **国公立推薦を強くする条件**:\\n\\n他大学の同種学部ではなく「なぜその国公立大学なのか」を説明します。大学固有の授業名、ゼミ、研究室、地域プログラムなどの**固有名詞を必ず1つ以上**入れ、研究テーマと結びつけましょう。"
+            },
+            {
+                "key": "step2_p4",
+                "role": "第4段落：入学後の学び方／将来像",
+                "guide": "【テンプレート】入学後は【取り組み】に挑戦し、【力】を身につけたい。そして、将来は【立場】として【どのように働くか】できる人間になりたい。",
+                "condition": "💡 **国公立推薦を強くする条件**:\\n\\n「大学生活を頑張りたい」といった抽象表現は避け、具体的な行動計画（実習、資格、留学など）を記述します。また、職業名だけでなく「どのような姿勢や力を持つ人間になりたいか」を明確にします。"
+            },
+            {
+                "key": "step2_p5",
+                "role": "第5段落：社会貢献",
+                "guide": "【テンプレート】将来は【身につけた力】を活かして、【対象・課題】に関わる形で社会に貢献したい。",
+                "condition": "💡 **国公立推薦を強くする条件**:\\n\\n「人の役に立つ」という曖昧な表現を完全に排除します。「誰の」「どのような課題に」「どう関わるか」を言葉にして、社会における自分の役割を示します。"
+            }
+        ]
+        
+        # 5段落の入力フォーム
+        p_texts = []
+        for p in paragraphs_info:
+            st.subheader(p["role"])
             st.caption(p["guide"])
             p_val = st.text_area(
                 "下書き入力エリア",
                 value=st.session_state[p["key"]],
                 key=f"{p['key']}_input",
-                height=150,
+                height=120,
                 label_visibility="collapsed"
             )
             st.session_state[p["key"]] = p_val
@@ -339,25 +450,25 @@ with tab2:
                 warnings = analyze_text(p_val)
                 for w in warnings:
                     st.write(w)
-                    
-        with col_cnd:
             st.info(p["condition"])
-        st.markdown("---")
+            st.markdown("---")
+            
+        # 5段落の結合プレビュー
+        st.subheader("📝 5段落を統合した完成原稿案")
+        compiled_draft = "\n\n".join([st.session_state[f"step2_p{i}"] for i in range(1, 6) if st.session_state[f"step2_p{i}"]])
+        st.session_state.step2_compiled = compiled_draft
         
-    # 5段落の結合プレビュー
-    st.subheader("📝 5段落を統合した完成原稿案")
-    compiled_draft = "\n\n".join([st.session_state[f"step2_p{i}"] for i in range(1, 6) if st.session_state[f"step2_p{i}"]])
-    st.session_state.step2_compiled = compiled_draft
-    
-    st.write("👉 **これをコピーして【ステップ③】の「最終添削ペースト欄」に貼り付けましょう！**")
-    st.text_area(
-        "統合された下書きテキスト",
-        value=st.session_state.step2_compiled,
-        height=250,
-        key="step2_compiled_area"
-    )
-    if compiled_draft:
-        st.caption(f"全体の文字数: {len(compiled_draft)} 文字 (改行を含む)")
+        st.write("👉 **これをコピーして【ステップ③】の「最終添削ペースト欄」に貼り付けましょう！**")
+        step2_compiled_input = st.text_area(
+            "統合された下書きテキスト",
+            value=st.session_state.step2_compiled,
+            height=200,
+            key="step2_compiled_area_v8"
+        )
+        st.session_state.step2_compiled = step2_compiled_input
+        if compiled_draft:
+            st.caption(f"全体の文字数: {len(compiled_draft)} 文字 (改行を含む)")
+
 
 # ==========================================
 # --- タブ3: ステップ③：国公立推薦 最終関門チェック ---
