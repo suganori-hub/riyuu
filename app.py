@@ -62,6 +62,27 @@ if api_key_input:
 st.sidebar.caption("💡 先生へ: Streamlit Cloudの Secrets に `GEMINI_API_KEY` を登録しておくと、生徒がキーを入力しなくても最初からすべてのAI機能を使えるようになります。")
 
 # APIキーの取得
+# AIモデルの選択
+st.sidebar.markdown("---")
+st.sidebar.subheader("🤖 AIモデルの設定")
+model_options = [
+    "gemini-1.5-flash",
+    "gemini-2.0-flash",
+    "gemini-2.5-flash",
+    "gemini-1.5-pro",
+    "gemini-2.5-pro",
+]
+selected_model = st.sidebar.selectbox(
+    "使用するAIモデルを選択してください:",
+    options=model_options,
+    index=0,
+    help="お使いのAPIキーのプランや時期によって、利用可能なモデルが異なります。404エラーが出る場合は、別のモデル（gemini-2.0-flash や gemini-2.5-flash など）に切り替えてみてください。"
+)
+
+custom_model_enabled = st.sidebar.checkbox("別のモデル名を直接入力する")
+if custom_model_enabled:
+    selected_model = st.sidebar.text_input("モデル名を入力（例: gemini-2.0-flash-exp）", value="gemini-1.5-flash")
+
 api_key = st.session_state.get("gemini_api_key") or st.secrets.get("GEMINI_API_KEY")
 
 # セッション状態の初期化
@@ -178,7 +199,7 @@ with tab1:
                             try:
                                 genai.configure(api_key=api_key)
                                 model = genai.GenerativeModel(
-                                    model_name="gemini-1.5-flash",
+                                    model_name=selected_model,
                                     system_instruction=system_instruction_step1
                                 )
                                 chat = model.start_chat(history=get_gemini_history())
@@ -381,7 +402,7 @@ with tab3:
                 with st.spinner("推薦指導アドバイザーが文章を厳しく添削中..."):
                     try:
                         genai.configure(api_key=api_key)
-                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        
                         
                         system_instruction_step3 = """あなたは国公立大学の学校推薦型選抜や総合型選抜の指導で、毎年数多くの合格者を輩出している超一流の進路指導教諭です。
 生徒が書いた志望理由書の全文を読み、以下の厳しい国公立推薦指導の観点（特にアドミッション・ポリシーへの合致や、他大学でなく『その大学で学ぶ必然性』）から評価し、具体的な赤ペン添削と改善アクションを提示してください。
@@ -407,9 +428,12 @@ with tab3:
 ## 💡 次のステップへのアドバイス
 - 生徒が明日からすぐに書き直せるような温かい激励メッセージ。
 """
+                        model = genai.GenerativeModel(
+                            model_name=selected_model,
+                            system_instruction=system_instruction_step3
+                        )
                         response = model.generate_content(
-                            f"【生徒の志望理由書】:\n{step3_input_text}\n\n上記を添削してください。",
-                            generation_config={"system_instruction": system_instruction_step3}
+                            f"【生徒の志望理由書】:\n{step3_input_text}\n\n上記を添削してください。"
                         )
                         st.markdown(response.text)
                     except Exception as e:
